@@ -1,0 +1,31 @@
+mod system;
+mod models;
+mod cli;
+
+use clap::Parser;
+use cli::{Cli, Commands};
+
+#[tokio::main]
+async fn main() -> anyhow::Result<()> {
+    let cli = Cli::parse();
+
+    match cli.command {
+        Some(Commands::Chat) => {
+            cli::run_chat_loop()?;
+        }
+        Some(Commands::Setup) => {
+            cli::run_setup();
+        }
+        Some(Commands::System) => {
+            cli::show_system_info();
+        }
+        Some(Commands::Models) => {
+            cli::list_models();
+        }
+        None => {
+            println!("Welcome to Aide! Use `aide setup` to get started or `aide chat` to begin.");
+        }
+    }
+
+    Ok(())
+}

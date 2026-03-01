@@ -1,0 +1,108 @@
+# AI CLI Tool (Aide) - Project Plan
+
+A local-first, intelligent CLI assistant built with Rust, featuring hardware-aware model management, SQLite-backed long-term memory, and autonomous task execution.
+
+## 1. Core Architecture
+
+The system will follow a modular architecture to ensure flexibility and local-first performance:
+
+*   **CLI Layer (Clap):** Handles user input, commands, and interactive prompts.
+*   **Orchestrator:** The "brain" that decides whether the current model can handle a request or if a specialized model is needed.
+*   **Model Provider Interface:** A trait-based abstraction to support different backends (e.g., `llama.cpp` via `llama-cpp-rs`, `Wuerstchen`, or `Ollama` API).
+*   **Memory Engine (SQLite + Vector Search):** Stores conversation history, user preferences, and learned "skills" using `rusqlite` and potentially a vector extension for RAG (Retrieval-Augmented Generation).
+*   **Action Runner:** A sandbox-aware module to execute shell commands (git, file ops, etc.) with user confirmation.
+*   **Hardware Profiler:** Detects CPU (AVX/NEON), GPU (Metal/CUDA/Vulkan), and RAM to recommend optimal GGUF quantization levels.
+
+## 2. Technical Stack
+
+*   **Language:** Rust
+*   **CLI Framework:** `clap` (v4) with `ratatui` for rich UI elements if needed.
+*   **Runtime:** `tokio` for async operations.
+*   **AI Inference:** `llama-cpp-2` or `candle` (HuggingFace's ML framework in Rust) for local inference.
+*   **Database:** `sqlite` (via `rusqlite`) for structured memory.
+*   **Hardware Detection:** `sysinfo` and `raw-cpuid`.
+
+## 3. Key Features & Implementation Steps
+
+### Phase 1: Foundation & Hardware Profiling [COMPLETED]
+1.  **System Audit:** Implemented modular hardware detection in `src/system/`.
+    *   Checks RAM, CPU, and OS using `sysinfo`.
+    *   Provides compatibility warnings if requirements aren't met.
+2.  **Model Registry:** Defined a core set of models in `src/models/` with hardware mappings.
+3.  **Setup Wizard:** Added a `setup` command to guide users through hardware profiling and model selection.
+
+## 4. Usage
+
+To run the initial setup and audit your hardware:
+```bash
+cargo run -- setup
+```
+
+To list available models:
+```bash
+cargo run -- models
+```
+
+To see raw system information:
+```bash
+cargo run -- system
+```
+
+### Phase 2: Local Inference Engine
+1.  **Model Downloader:** Integration with HuggingFace Hub to download GGUF files safely with progress bars.
+2.  **Inference Wrapper:** Setup basic chat completion using a local engine.
+3.  **Context Management:** Handle sliding windows for long conversations.
+
+### Phase 3: Memory & Learning (SQLite)
+1.  **Schema Design:**
+    *   `conversations`: History of interactions.
+    *   `user_profile`: Preferences, project paths, frequently used commands.
+    *   `knowledge_chunks`: Vectorized snippets for RAG.
+2.  **Learning Loop:** Automatically extract "facts" from user interactions to update the `user_profile`.
+
+### Phase 4: Intent Classification & Model Switching
+1.  **Router Logic:** The Main Model classifies the user's intent (e.g., General, Coding, Design, System Task).
+2.  **Switching Prompt:** If the current model is insufficient (e.g., general model asked for complex Refactoring), prompt the user: *"This task requires DeepSeek-Coder. Download and switch? (y/n)"*.
+
+### Phase 5: Action Execution (Tools)
+1.  **Function Calling:** Implement a parser for the model to output structured tool calls (e.g., `{"tool": "shell", "command": "git init"}`).
+2.  **Safety Gate:** All destructive commands (rm, push, etc.) require explicit user `[y/N]` confirmation via the CLI.
+3.  **Git Integration:** Pre-defined high-level actions for git workflows.
+
+## 4. Proposed Database Schema (SQLite)
+
+```sql
+CREATE TABLE memory (
+    id INTEGER PRIMARY KEY,
+    key TEXT UNIQUE,
+    value TEXT,
+    last_updated DATETIME
+);
+
+CREATE TABLE chat_history (
+    id INTEGER PRIMARY KEY,
+    role TEXT, -- 'user' or 'assistant'
+    content TEXT,
+    timestamp DATETIME DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE models (
+    name TEXT PRIMARY KEY,
+    path TEXT,
+    quantization TEXT,
+    is_main BOOLEAN
+);
+```
+
+## 5. Development Roadmap
+
+- **Week 1:** Project scaffolding, Hardware Audit module, CLI argument parsing.
+- **Week 2:** Model downloading logic and `llama.cpp` integration.
+- **Week 3:** SQLite memory implementation and persistent context.
+- **Week 4:** Tool execution engine and intent routing.
+- **Week 5:** Refinement, UI/UX improvements (spinners, markdown rendering in terminal).
+
+## 6. Local-First Guarantees
+- No telemetry by default.
+- Data stays in `~/.local/share/aide` or equivalent.
+- Works entirely offline once models are downloaded.
