@@ -1,4 +1,5 @@
 use llama_cpp_2::context::params::LlamaContextParams;
+use llama_cpp_sys_2;
 use llama_cpp_2::llama_backend::LlamaBackend;
 use llama_cpp_2::model::params::LlamaModelParams;
 use llama_cpp_2::model::{LlamaModel, AddBos};
@@ -20,8 +21,8 @@ impl InferenceEngine {
         backend.void_logs(); 
 
         let mut model_params = LlamaModelParams::default();
-        // Cấu hình GPU Metal cho M1 (Llama 3 8B có 33 layers)
-        model_params = model_params.with_n_gpu_layers(33); 
+        // i32::MAX để đảm bảo toàn bộ layers đều offload lên Metal GPU
+        model_params = model_params.with_n_gpu_layers(u32::MAX);
         
         let model = LlamaModel::load_from_file(&backend, model_path, &model_params)
             .context("Failed to load model file")?;
@@ -53,10 +54,14 @@ impl InferenceEngine {
 
     pub fn generate(&self, user_input: &str, max_tokens: i32) -> anyhow::Result<String> {
         let mut ctx_params = LlamaContextParams::default();
-        // Đặt n_ctx 2048 là mức an toàn cho M1
         ctx_params = ctx_params.with_n_ctx(Some(NonZeroU32::new(2048).unwrap()));
-        ctx_params = ctx_params.with_n_batch(512);
+        ctx_params = ctx_params.with_n_batch(2048);
         ctx_params = ctx_params.with_n_threads(8);
+        ctx_params = ctx_params.with_n_threads_batch(8);
+        // Flash Attention tăng tốc đáng kể trên Apple Silicon Metal
+        ctx_params = ctx_params.with_flash_attention_policy(
+            llama_cpp_sys_2::LLAMA_FLASH_ATTN_TYPE_ENABLED
+        );
 
         let mut ctx = self.model.new_context(&self.backend, ctx_params)
             .context("Failed to create context")?;

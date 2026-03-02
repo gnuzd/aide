@@ -24,6 +24,7 @@ dependencies = [
  "futures-util",
  "indicatif",
  "llama-cpp-2",
+ "llama-cpp-sys-2",
  "reqwest",
  "rustyline",
  "serde",
