@@ -14,7 +14,7 @@ async fn main() -> anyhow::Result<()> {
             cli::run_chat_loop()?;
         }
         Some(Commands::Setup) => {
-            cli::run_setup();
+            cli::run_setup().await?;
         }
         Some(Commands::System) => {
             cli::show_system_info();
