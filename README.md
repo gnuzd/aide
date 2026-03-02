@@ -31,27 +31,36 @@ The system will follow a modular architecture to ensure flexibility and local-fi
 2.  **Model Registry:** Defined a core set of models in `src/models/` with hardware mappings.
 3.  **Setup Wizard:** Added a `setup` command to guide users through hardware profiling and model selection.
 
+### Phase 2: Local Inference Engine [COMPLETED]
+1.  **Model Downloader:** HuggingFace Hub integration via `reqwest` with streaming progress bars (`indicatif`). Downloads GGUF files to `~/.aide/models/`.
+2.  **Inference Engine** (`src/models/inference.rs`): Local chat completion using `llama-cpp-2`.
+    *   Multi-template prompt formatting: `llama3`, `phi3`, `deepseek`, `chatml`.
+    *   Greedy sampling via direct logit argmax on `get_logits_ith()` — O(1) allocation per token.
+    *   Streaming token output with `encoding_rs` UTF-8 decoding.
+    *   Apple Silicon optimizations: Flash Attention (`LLAMA_FLASH_ATTN_TYPE_ENABLED`), full GPU offload (`n_gpu_layers = u32::MAX`), KV cache on Metal.
+3.  **Chat Loop:** Interactive REPL via `rustyline` with history support.
+
 ## 4. Usage
 
 To run the initial setup and audit your hardware:
 ```bash
-cargo run -- setup
+cargo run --release -- setup
+```
+
+To start a chat session (recommend release build for best performance):
+```bash
+cargo run --release -- chat
 ```
 
 To list available models:
 ```bash
-cargo run -- models
+cargo run --release -- models
 ```
 
 To see raw system information:
 ```bash
-cargo run -- system
+cargo run --release -- system
 ```
-
-### Phase 2: Local Inference Engine
-1.  **Model Downloader:** Integration with HuggingFace Hub to download GGUF files safely with progress bars.
-2.  **Inference Wrapper:** Setup basic chat completion using a local engine.
-3.  **Context Management:** Handle sliding windows for long conversations.
 
 ### Phase 3: Memory & Learning (SQLite)
 1.  **Schema Design:**
