@@ -2,7 +2,7 @@ use llama_cpp_2::context::params::LlamaContextParams;
 use llama_cpp_2::llama_backend::LlamaBackend;
 use llama_cpp_2::model::params::LlamaModelParams;
 use llama_cpp_2::model::{LlamaModel, AddBos};
-use llama_cpp_2::token::data_array::LlamaTokenDataArray;
+use llama_cpp_2::token::LlamaToken;
 use std::path::Path;
 use anyhow::Context;
 use std::num::NonZeroU32;
@@ -77,9 +77,14 @@ impl InferenceEngine {
         let mut decoder = encoding_rs::UTF_8.new_decoder();
 
         for _ in 0..max_tokens {
-            let candidates = ctx.candidates_ith(batch.n_tokens() - 1);
-            let mut candidates_p = LlamaTokenDataArray::from_iter(candidates, false);
-            let token = candidates_p.sample_token_greedy();
+            let logits = ctx.get_logits_ith(batch.n_tokens() - 1);
+            let token = LlamaToken::new(
+                logits.iter()
+                    .enumerate()
+                    .max_by(|(_, a), (_, b)| a.total_cmp(b))
+                    .map(|(i, _)| i as i32)
+                    .unwrap_or(0),
+            );
 
             // Dừng nếu gặp token kết thúc
             if self.model.is_eog_token(token) {
