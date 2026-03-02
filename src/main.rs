@@ -1,5 +1,6 @@
 mod system;
 mod models;
+mod memory;
 mod cli;
 
 use clap::Parser;
@@ -21,6 +22,9 @@ async fn main() -> anyhow::Result<()> {
         }
         Some(Commands::Models) => {
             cli::list_models();
+        }
+        Some(Commands::Clear) => {
+            cli::run_clear()?;
         }
         None => {
             println!("Welcome to Aide! Use `aide setup` to get started or `aide chat` to begin.");

@@ -5,6 +5,7 @@ use llama_cpp_2::model::params::LlamaModelParams;
 use llama_cpp_2::model::{LlamaModel, AddBos};
 use llama_cpp_2::token::LlamaToken;
 use std::path::Path;
+use std::sync::atomic::{AtomicBool, Ordering};
 use anyhow::Context;
 use std::num::NonZeroU32;
 use encoding_rs;
@@ -30,29 +31,29 @@ impl InferenceEngine {
         Ok(Self { model, backend, template_type })
     }
 
-    pub fn format_prompt(&self, user_input: &str) -> String {
+    pub fn format_prompt(&self, user_input: &str, system_prompt: &str) -> String {
         match self.template_type.as_str() {
             "phi3" => format!(
-                "<|system|>\nYou are Aide, a helpful assistant.<|end|>\n<|user|>\n{}<|end|>\n<|assistant|>\n",
-                user_input
+                "<|system|>\n{}<|end|>\n<|user|>\n{}<|end|>\n<|assistant|>\n",
+                system_prompt, user_input
             ),
             "deepseek" => format!(
-                "### System:\nYou are Aide, a helpful assistant.\n### Human:\n{}\n### Assistant:\n",
-                user_input
+                "### System:\n{}\n### Human:\n{}\n### Assistant:\n",
+                system_prompt, user_input
             ),
             "chatml" => format!(
-                "<|im_start|>system\nYou are Aide, a helpful assistant.<|im_end|>\n<|im_start|>user\n{}<|im_end|>\n<|im_start|>assistant\n",
-                user_input
+                "<|im_start|>system\n{}<|im_end|>\n<|im_start|>user\n{}<|im_end|>\n<|im_start|>assistant\n",
+                system_prompt, user_input
             ),
             // "llama3" and default
             _ => format!(
-                "<|begin_of_text|><|start_header_id|>system<|end_header_id|>\n\nYou are Aide, a helpful assistant.<|eot_id|><|start_header_id|>user<|end_header_id|>\n\n{}<|eot_id|><|start_header_id|>assistant<|end_header_id|>\n\n",
-                user_input
+                "<|begin_of_text|><|start_header_id|>system<|end_header_id|>\n\n{}<|eot_id|><|start_header_id|>user<|end_header_id|>\n\n{}<|eot_id|><|start_header_id|>assistant<|end_header_id|>\n\n",
+                system_prompt, user_input
             ),
         }
     }
 
-    pub fn generate(&self, user_input: &str, max_tokens: i32) -> anyhow::Result<String> {
+    pub fn generate(&self, user_input: &str, max_tokens: i32, system_prompt: &str, stop: &AtomicBool) -> anyhow::Result<String> {
         let mut ctx_params = LlamaContextParams::default();
         ctx_params = ctx_params.with_n_ctx(Some(NonZeroU32::new(2048).unwrap()));
         ctx_params = ctx_params.with_n_batch(2048);
@@ -66,7 +67,7 @@ impl InferenceEngine {
         let mut ctx = self.model.new_context(&self.backend, ctx_params)
             .context("Failed to create context")?;
 
-        let prompt = self.format_prompt(user_input);
+        let prompt = self.format_prompt(user_input, system_prompt);
         // Quan trọng: Sử dụng AddBos::Never vì template đã có <|begin_of_text|>
         let tokens = self.model.str_to_token(&prompt, AddBos::Never)?;
 
@@ -91,14 +92,15 @@ impl InferenceEngine {
                     .unwrap_or(0),
             );
 
-            // Dừng nếu gặp token kết thúc
-            if self.model.is_eog_token(token) {
+            // Stop on end-of-generation token or ESC signal
+            if self.model.is_eog_token(token) || stop.load(Ordering::Relaxed) {
                 break;
             }
 
             let piece = self.model.token_to_piece(token, &mut decoder, false, None)?;
-            
-            print!("{}", piece);
+
+            // Use \r\n so newlines render correctly in raw mode (active during generation)
+            print!("{}", piece.replace('\n', "\r\n"));
             std::io::Write::flush(&mut std::io::stdout())?;
             response.push_str(&piece);
 

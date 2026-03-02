@@ -62,12 +62,12 @@ To see raw system information:
 cargo run --release -- system
 ```
 
-### Phase 3: Memory & Learning (SQLite)
-1.  **Schema Design:**
-    *   `conversations`: History of interactions.
-    *   `user_profile`: Preferences, project paths, frequently used commands.
-    *   `knowledge_chunks`: Vectorized snippets for RAG.
-2.  **Learning Loop:** Automatically extract "facts" from user interactions to update the `user_profile`.
+### Phase 3: Memory & Learning (SQLite) [COMPLETED]
+1.  **Schema Design** (`~/.aide/memory.db`, WAL mode):
+    *   `conversations`: Full turn history (session_id, turn_number, user_message, assistant_response, timestamp).
+    *   `user_profile`: Key/value profile store (languages_mentioned, skill_level, topics_of_interest, has_active_project, total_turns).
+2.  **Learning Loop** (`src/memory/mod.rs`): In-process pattern matching per turn — no LLM call. Detects programming languages, skill level signals, topic interests, and active project indicators. Accumulated facts persist across sessions.
+3.  **Personalized System Prompt:** Profile summary injected into the system prompt at session start (~60 tokens), personalizing responses based on accumulated knowledge. Each `aide chat` is a new session; old history is saved but not re-injected into context.
 
 ### Phase 4: Intent Classification & Model Switching
 1.  **Router Logic:** The Main Model classifies the user's intent (e.g., General, Coding, Design, System Task).
