@@ -69,12 +69,12 @@ impl CodeHighlighter {
     }
 }
 
-enum Part<'a> {
+pub enum Part<'a> {
     Text(&'a str),
     Code { lang: &'a str, code: &'a str },
 }
 
-fn split_code_blocks(text: &str) -> Vec<Part<'_>> {
+pub fn split_code_blocks(text: &str) -> Vec<Part<'_>> {
     let mut parts = Vec::new();
     let mut pos = 0;
 

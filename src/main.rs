@@ -7,6 +7,7 @@ mod cli;
 
 use clap::Parser;
 use cli::{Cli, Commands};
+use colored::*;
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
@@ -23,16 +24,26 @@ async fn main() -> anyhow::Result<()> {
             cli::show_system_info();
         }
         Some(Commands::Models) => {
-            cli::list_models();
+            cli::list_models().await?;
         }
         Some(Commands::Clear) => {
-            cli::run_clear()?;
+            if cli::run_clear()? {
+                println!("\n{}", "Re-running setup...".cyan().bold());
+                cli::run_setup().await?;
+            }
         }
         Some(Commands::Theme) => {
             cli::run_theme()?;
         }
         None => {
-            println!("Welcome to Aide! Use `aide setup` to get started or `aide chat` to begin.");
+            let registry = models::ModelRegistry::new();
+            let config = registry.load_config()?;
+            if config.active_model_path.is_some() {
+                cli::run_chat_loop()?;
+            } else {
+                println!("{}", "No active model found. Starting setup...".cyan().bold());
+                cli::run_setup().await?;
+            }
         }
     }
 

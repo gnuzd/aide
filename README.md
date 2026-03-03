@@ -69,9 +69,9 @@ cargo run --release -- system
 2.  **Learning Loop** (`src/memory/mod.rs`): In-process pattern matching per turn — no LLM call. Detects programming languages, skill level signals, topic interests, and active project indicators. Accumulated facts persist across sessions.
 3.  **Personalized System Prompt:** Profile summary injected into the system prompt at session start (~60 tokens), personalizing responses based on accumulated knowledge. Each `aide chat` is a new session; old history is saved but not re-injected into context.
 
-### Phase 4: Intent Classification & Model Switching
-1.  **Router Logic:** The Main Model classifies the user's intent (e.g., General, Coding, Design, System Task).
-2.  **Switching Prompt:** If the current model is insufficient (e.g., general model asked for complex Refactoring), prompt the user: *"This task requires DeepSeek-Coder. Download and switch? (y/n)"*.
+### Phase 4: Intent Classification & Model Switching [COMPLETED]
+1.  **Router Logic:** LLM-based intent classification (CODING vs GENERAL) using a tiny `max_tokens=8` prompt against the active model — no external service needed.
+2.  **Per-turn Switch Prompt:** If a better-suited model exists (or can be downloaded), the user is offered a session-only switch: *"Looks like a coding task — DeepSeek Coder handles it better. Download (~8 GB) and switch for this session? [y/N]"*. Declining or skipping keeps the current model. Each alternative is offered at most once per session (`already_offered` guard). No config file is modified — next `aide chat` loads the original model.
 
 ### Phase 5: Action Execution (Tools)
 1.  **Function Calling:** Implement a parser for the model to output structured tool calls (e.g., `{"tool": "shell", "command": "git init"}`).

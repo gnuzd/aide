@@ -19,12 +19,12 @@ pub struct InferenceEngine {
 impl InferenceEngine {
     pub fn new(model_path: &Path, template_type: String) -> anyhow::Result<Self> {
         let mut backend = LlamaBackend::init()?;
-        backend.void_logs(); 
+        backend.void_logs();
 
         let mut model_params = LlamaModelParams::default();
         // i32::MAX để đảm bảo toàn bộ layers đều offload lên Metal GPU
         model_params = model_params.with_n_gpu_layers(u32::MAX);
-        
+
         let model = LlamaModel::load_from_file(&backend, model_path, &model_params)
             .context("Failed to load model file")?;
 
@@ -45,6 +45,14 @@ impl InferenceEngine {
                 "<|im_start|>system\n{}<|im_end|>\n<|im_start|>user\n{}<|im_end|>\n<|im_start|>assistant\n",
                 system_prompt, user_input
             ),
+            "mistral" => format!(
+                "<s>[INST] {}\n\n{} [/INST]\n",
+                system_prompt, user_input
+            ),
+            "gemma" => format!(
+                "<bos><start_of_turn>user\n{}\n\n{}<end_of_turn>\n<start_of_turn>model\n",
+                system_prompt, user_input
+            ),
             // "llama3" and default
             _ => format!(
                 "<|begin_of_text|><|start_header_id|>system<|end_header_id|>\n\n{}<|eot_id|><|start_header_id|>user<|end_header_id|>\n\n{}<|eot_id|><|start_header_id|>assistant<|end_header_id|>\n\n",
@@ -53,7 +61,14 @@ impl InferenceEngine {
         }
     }
 
-    pub fn generate(&self, user_input: &str, max_tokens: i32, system_prompt: &str, stop: &AtomicBool) -> anyhow::Result<String> {
+    /// Core generation loop operating on a pre-formatted prompt string.
+    fn generate_raw(
+        &self,
+        prompt: &str,
+        max_tokens: i32,
+        stop: &AtomicBool,
+        mut on_token: Option<&mut dyn FnMut(&str)>,
+    ) -> anyhow::Result<String> {
         let mut ctx_params = LlamaContextParams::default();
         ctx_params = ctx_params.with_n_ctx(Some(NonZeroU32::new(2048).unwrap()));
         ctx_params = ctx_params.with_n_batch(2048);
@@ -67,9 +82,8 @@ impl InferenceEngine {
         let mut ctx = self.model.new_context(&self.backend, ctx_params)
             .context("Failed to create context")?;
 
-        let prompt = self.format_prompt(user_input, system_prompt);
         // Quan trọng: Sử dụng AddBos::Never vì template đã có <|begin_of_text|>
-        let tokens = self.model.str_to_token(&prompt, AddBos::Never)?;
+        let tokens = self.model.str_to_token(prompt, AddBos::Never)?;
 
         let mut batch = llama_cpp_2::llama_batch::LlamaBatch::new(2048, 1);
         for (i, token) in tokens.iter().enumerate() {
@@ -77,7 +91,7 @@ impl InferenceEngine {
         }
 
         ctx.decode(&mut batch).map_err(|e| anyhow::anyhow!("Decode prompt failed: {}", e))?;
-        
+
         let mut response = String::new();
         let mut n_cur = batch.n_tokens();
         let mut decoder = encoding_rs::UTF_8.new_decoder();
@@ -99,6 +113,9 @@ impl InferenceEngine {
 
             let piece = self.model.token_to_piece(token, &mut decoder, false, None)?;
             response.push_str(&piece);
+            if let Some(cb) = on_token.as_deref_mut() {
+                cb(&piece);
+            }
 
             batch.clear();
             let _ = batch.add(token, n_cur, &[0], true);
@@ -113,5 +130,20 @@ impl InferenceEngine {
         }
 
         Ok(response)
+    }
+
+    pub fn generate_stream<F>(
+        &self,
+        user_input: &str,
+        max_tokens: i32,
+        system_prompt: &str,
+        stop: &AtomicBool,
+        mut on_token: F,
+    ) -> anyhow::Result<String>
+    where
+        F: FnMut(&str),
+    {
+        let prompt = self.format_prompt(user_input, system_prompt);
+        self.generate_raw(&prompt, max_tokens, stop, Some(&mut on_token))
     }
 }

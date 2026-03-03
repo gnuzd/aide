@@ -279,7 +279,10 @@ impl MemoryStore {
     }
 
     pub fn get_profile_summary(&self) -> Result<String> {
-        let base = "You are Aide, a helpful assistant.";
+        let base = "You are Aide, a helpful assistant. \
+When the user specifically asks you to create, generate, or produce an image, first describe what you're creating, \
+then return a fenced code block with language 'image-prompt' containing a detailed, high-quality prompt for Stable Diffusion. \
+Otherwise, chat normally and do not output image prompts. Do not output base64 data, and do not output Python or shell commands for image generation.";
 
         let languages = self.get_profile_value("languages_mentioned").unwrap_or_default();
         let skill = self.get_profile_value("skill_level").unwrap_or_default();
