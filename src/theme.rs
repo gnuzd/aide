@@ -1,0 +1,130 @@
+use serde::{Deserialize, Serialize};
+
+#[derive(Serialize, Deserialize, Clone, Debug)]
+pub struct Theme {
+    pub name: String,
+    /// Normal text colour — "#rrggbb"
+    pub fg: String,
+    /// H1 heading
+    pub h1: String,
+    /// H2-H6 headings
+    pub headers: String,
+    /// Bold text
+    pub bold: String,
+    /// Italic text
+    pub italic: String,
+    /// Inline-code / code-block foreground
+    pub code_fg: String,
+    /// Code-block background
+    pub code_bg: String,
+    /// Bullet-point colour
+    pub bullet: String,
+    /// User chat-bubble background
+    pub user_bg: String,
+    /// User chat-bubble text
+    pub user_fg: String,
+    /// syntect theme name for code blocks
+    pub syntax_theme: String,
+}
+
+/// Parse "#rrggbb" → (r, g, b).  Falls back to white on any error.
+pub fn parse_hex(hex: &str) -> (u8, u8, u8) {
+    let h = hex.trim_start_matches('#');
+    if h.len() == 6 {
+        if let (Ok(r), Ok(g), Ok(b)) = (
+            u8::from_str_radix(&h[0..2], 16),
+            u8::from_str_radix(&h[2..4], 16),
+            u8::from_str_radix(&h[4..6], 16),
+        ) {
+            return (r, g, b);
+        }
+    }
+    (0xff, 0xff, 0xff)
+}
+
+pub fn is_valid_hex(hex: &str) -> bool {
+    let h = hex.trim_start_matches('#');
+    h.len() == 6 && h.chars().all(|c| c.is_ascii_hexdigit())
+}
+
+/// All built-in themes in display order.
+pub fn builtin_themes() -> Vec<Theme> {
+    vec![gruvbox(), nord(), dracula(), tokyonight()]
+}
+
+/// Built-in themes + any user-created themes.
+pub fn all_themes(custom: &[Theme]) -> Vec<Theme> {
+    let mut themes = builtin_themes();
+    themes.extend_from_slice(custom);
+    themes
+}
+
+// ── Built-in theme definitions ──────────────────────────────────────────────
+
+pub fn gruvbox() -> Theme {
+    Theme {
+        name: "gruvbox".to_string(),
+        fg: "#ebdbb2".to_string(),
+        h1: "#fe8019".to_string(),
+        headers: "#fabd2f".to_string(),
+        bold: "#fe8019".to_string(),
+        italic: "#b8bb26".to_string(),
+        code_fg: "#8ec07c".to_string(),
+        code_bg: "#3c3836".to_string(),
+        bullet: "#fabd2f".to_string(),
+        user_bg: "#076678".to_string(),
+        user_fg: "#ebdbb2".to_string(),
+        syntax_theme: "base16-ocean.dark".to_string(),
+    }
+}
+
+fn nord() -> Theme {
+    Theme {
+        name: "nord".to_string(),
+        fg: "#d8dee9".to_string(),
+        h1: "#88c0d0".to_string(),
+        headers: "#81a1c1".to_string(),
+        bold: "#88c0d0".to_string(),
+        italic: "#a3be8c".to_string(),
+        code_fg: "#81a1c1".to_string(),
+        code_bg: "#3b4252".to_string(),
+        bullet: "#88c0d0".to_string(),
+        user_bg: "#3b4252".to_string(),
+        user_fg: "#eceff4".to_string(),
+        syntax_theme: "base16-ocean.dark".to_string(),
+    }
+}
+
+fn dracula() -> Theme {
+    Theme {
+        name: "dracula".to_string(),
+        fg: "#f8f8f2".to_string(),
+        h1: "#ff79c6".to_string(),
+        headers: "#bd93f9".to_string(),
+        bold: "#ff79c6".to_string(),
+        italic: "#50fa7b".to_string(),
+        code_fg: "#50fa7b".to_string(),
+        code_bg: "#282a36".to_string(),
+        bullet: "#f1fa8c".to_string(),
+        user_bg: "#44475a".to_string(),
+        user_fg: "#f8f8f2".to_string(),
+        syntax_theme: "base16-eighties.dark".to_string(),
+    }
+}
+
+fn tokyonight() -> Theme {
+    Theme {
+        name: "tokyonight".to_string(),
+        fg: "#a9b1d6".to_string(),
+        h1: "#7aa2f7".to_string(),
+        headers: "#bb9af7".to_string(),
+        bold: "#7aa2f7".to_string(),
+        italic: "#9ece6a".to_string(),
+        code_fg: "#73daca".to_string(),
+        code_bg: "#1a1b2e".to_string(),
+        bullet: "#e0af68".to_string(),
+        user_bg: "#24283b".to_string(),
+        user_fg: "#c0caf5".to_string(),
+        syntax_theme: "base16-ocean.dark".to_string(),
+    }
+}

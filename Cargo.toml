@@ -33,3 +33,7 @@ encoding_rs = "0.8"
 rusqlite = { version = "0.31", features = ["bundled"] }
 # Terminal events (ESC detection)
 crossterm = "0.27"
+# Markdown rendering in terminal
+termimad = "0.23"
+# Syntax highlighting for code blocks
+syntect = "5.2"

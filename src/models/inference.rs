@@ -98,10 +98,6 @@ impl InferenceEngine {
             }
 
             let piece = self.model.token_to_piece(token, &mut decoder, false, None)?;
-
-            // Use \r\n so newlines render correctly in raw mode (active during generation)
-            print!("{}", piece.replace('\n', "\r\n"));
-            std::io::Write::flush(&mut std::io::stdout())?;
             response.push_str(&piece);
 
             batch.clear();

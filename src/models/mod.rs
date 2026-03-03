@@ -2,7 +2,7 @@ pub mod inference;
 
 use serde::{Serialize, Deserialize};
 use crate::system::SystemSpecs;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use std::fs;
 use std::io::{Write, Read};
 use futures_util::StreamExt;
@@ -27,10 +27,14 @@ pub struct Model {
     pub template_type: String, // "llama3", "phi3", "chatml"
 }
 
-#[derive(Debug, Serialize, Deserialize, Default)]
+#[derive(Debug, Serialize, Deserialize, Default, Clone)]
 pub struct Config {
     pub active_model_path: Option<PathBuf>,
     pub active_model_template: Option<String>,
+    #[serde(default)]
+    pub active_theme: Option<String>,
+    #[serde(default)]
+    pub custom_themes: Vec<crate::theme::Theme>,
 }
 
 pub struct ModelRegistry {
