@@ -63,7 +63,7 @@ pub fn run_chat_loop(
             match cmd {
                 "/help" => {
                     println!("\n{}", "Available Commands:".bold().yellow());
-                    println!("  /clear          - Clear all memory and configuration");
+                    println!("  /clear [arg]    - Clear data (all, chat, profile, models, config)");
                     println!("  /help           - Show this help message");
                     println!("  /memory         - Show what Aide knows about you");
                     println!("  /models         - List available and downloaded models");
@@ -149,16 +149,65 @@ pub fn run_chat_loop(
                     println!("  {}", summary);
                 }
                 "/clear" => {
-                    print!("Are you sure you want to clear all memory and config? (y/N): ");
-                    stdout().flush()?;
-                    let mut confirm = String::new();
-                    std::io::stdin().read_line(&mut confirm)?;
-                    if confirm.trim().to_lowercase() == "y" {
-                        aide.memory.clear_conversations()?;
-                        aide.memory.clear_profile()?;
-                        println!("{}", "Memory cleared.".green());
-                    } else {
-                        println!("Clear cancelled.");
+                    let sub = if parts.len() > 1 { parts[1] } else { "all" };
+                    match sub {
+                        "chat" | "conversation" | "conversations" => {
+                            print!("Clear all chat history? (y/N): ");
+                            stdout().flush()?;
+                            let mut confirm = String::new();
+                            std::io::stdin().read_line(&mut confirm)?;
+                            if confirm.trim().to_lowercase() == "y" {
+                                aide.clear_conversations()?;
+                                chat_history.clear();
+                                println!("{}", "Chat history cleared.".green());
+                            }
+                        }
+                        "profile" | "memory" => {
+                            print!("Clear user profile memory? (y/N): ");
+                            stdout().flush()?;
+                            let mut confirm = String::new();
+                            std::io::stdin().read_line(&mut confirm)?;
+                            if confirm.trim().to_lowercase() == "y" {
+                                aide.clear_profile()?;
+                                println!("{}", "User profile cleared.".green());
+                            }
+                        }
+                        "models" => {
+                            print!("Delete all downloaded models? (y/N): ");
+                            stdout().flush()?;
+                            let mut confirm = String::new();
+                            std::io::stdin().read_line(&mut confirm)?;
+                            if confirm.trim().to_lowercase() == "y" {
+                                aide.clear_models()?;
+                                println!("{}", "Models deleted. Restarting setup...".green().bold());
+                                return Ok(());
+                            }
+                        }
+                        "config" => {
+                            print!("Reset configuration to default? (y/N): ");
+                            stdout().flush()?;
+                            let mut confirm = String::new();
+                            std::io::stdin().read_line(&mut confirm)?;
+                            if confirm.trim().to_lowercase() == "y" {
+                                aide.clear_config()?;
+                                println!("{}", "Config reset. Restarting setup...".green().bold());
+                                return Ok(());
+                            }
+                        }
+                        "all" | "full" | "reset" => {
+                            print!("Are you sure you want to clear EVERYTHING? (y/N): ");
+                            stdout().flush()?;
+                            let mut confirm = String::new();
+                            std::io::stdin().read_line(&mut confirm)?;
+                            if confirm.trim().to_lowercase() == "y" {
+                                aide.reset()?;
+                                println!("{}", "\nSystem reset successful. Restarting setup...".green().bold());
+                                return Ok(());
+                            }
+                        }
+                        _ => {
+                            println!("Unknown clear target: {}. Use 'all', 'chat', 'profile', 'models', or 'config'.", sub);
+                        }
                     }
                 }
                 _ => {
@@ -185,11 +234,31 @@ pub fn run_chat_loop(
             SetAttribute(Attribute::Reset),
             SetForegroundColor(current_theme.fg_color()),
         )?;
+        
+        // Thinking indicator
+        print!("{}", "Thinking...".dimmed());
         stdout().flush()?;
 
         let mut response_full = String::new();
+        let mut first_token = true;
 
         engine.ask_stream(&line, &chat_history, 1024, &system_prompt, &stop, |token| {
+            if first_token {
+                // Clear "Thinking..." (11 chars)
+                print!("\r");
+                crossterm::execute!(
+                    stdout(),
+                    SetForegroundColor(current_theme.h1_color()),
+                    SetAttribute(Attribute::Bold),
+                ).unwrap();
+                print!("Aide: ");
+                crossterm::execute!(
+                    stdout(),
+                    SetAttribute(Attribute::Reset),
+                    SetForegroundColor(current_theme.fg_color()),
+                ).unwrap();
+                first_token = false;
+            }
             print!("{}", token);
             stdout().flush().unwrap();
             response_full.push_str(token);

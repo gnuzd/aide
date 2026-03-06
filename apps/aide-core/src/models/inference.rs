@@ -22,8 +22,8 @@ impl InferenceEngine {
         backend.void_logs();
 
         let mut model_params = LlamaModelParams::default();
-        // i32::MAX để đảm bảo toàn bộ layers đều offload lên Metal GPU
-        model_params = model_params.with_n_gpu_layers(u32::MAX);
+        // High enough value (e.g., 999) to ensure all layers offload to Metal GPU
+        model_params = model_params.with_n_gpu_layers(999);
 
         let model = LlamaModel::load_from_file(&backend, model_path, &model_params)
             .context("Failed to load model file")?;

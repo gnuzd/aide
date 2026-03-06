@@ -59,11 +59,27 @@ fn read_chat_line_inner(aide: &Aide, history: &[String]) -> anyhow::Result<Optio
     loop {
         // Mode detection
         let is_theme_submode = buf.starts_with("/theme ");
+        let is_clear_submode = buf.starts_with("/clear ");
         let show_menu = buf.starts_with('/');
         
         let (menu_items, filtered): (Vec<(String, String)>, Vec<usize>) = if is_theme_submode {
             let filter_text = &buf[7..];
             let items: Vec<(String, String)> = themes_list.iter().map(|t| (t.name.clone(), "theme".to_string())).collect();
+            let filtered_indices: Vec<usize> = items.iter()
+                .enumerate()
+                .filter(|(_, (name, _))| name.starts_with(filter_text))
+                .map(|(i, _)| i)
+                .collect();
+            (items, filtered_indices)
+        } else if is_clear_submode {
+            let filter_text = &buf[7..];
+            let items: Vec<(String, String)> = vec![
+                ("all", "factory reset (EVERYTHING)").into(),
+                ("chat", "clear conversation history").into(),
+                ("profile", "clear memory/profile").into(),
+                ("models", "delete all downloaded models").into(),
+                ("config", "reset settings to default").into(),
+            ].into_iter().map(|(a, d): (&str, &str)| (a.to_string(), d.to_string())).collect();
             let filtered_indices: Vec<usize> = items.iter()
                 .enumerate()
                 .filter(|(_, (name, _))| name.starts_with(filter_text))
@@ -98,9 +114,8 @@ fn read_chat_line_inner(aide: &Aide, history: &[String]) -> anyhow::Result<Optio
 
         let vis_cursor = buf[..cursor_pos].chars().count() as u16;
         let menu_rows = filtered.len() as u16;
-        let prompt_label = " You ";
         let prompt_sep = " > ";
-        let prompt_cols: u16 = (prompt_label.len() + prompt_sep.len()) as u16;
+        let prompt_cols: u16 = prompt_sep.len() as u16;
 
         // ── REDRAW ──
         crossterm::execute!(stdout(), MoveToColumn(0), Clear(ClearType::FromCursorDown))?;
@@ -108,14 +123,6 @@ fn read_chat_line_inner(aide: &Aide, history: &[String]) -> anyhow::Result<Optio
         // Background for the whole line
         crossterm::execute!(stdout(), SetBackgroundColor(current_theme.user_bg_color()))?;
         crossterm::execute!(stdout(), Clear(ClearType::CurrentLine))?;
-        
-        // Print " You " (Bold color)
-        crossterm::execute!(
-            stdout(),
-            SetForegroundColor(current_theme.bold_color()),
-            SetAttribute(Attribute::Bold),
-        )?;
-        print!("{}", prompt_label);
         
         // Print " > " (Headers color)
         crossterm::execute!(
@@ -161,8 +168,15 @@ fn read_chat_line_inner(aide: &Aide, history: &[String]) -> anyhow::Result<Optio
                             cursor_pos = buf.len();
                             menu_sel = 0;
                             continue;
+                        } else if selected == "/clear" && !is_clear_submode {
+                            buf = "/clear ".to_string();
+                            cursor_pos = buf.len();
+                            menu_sel = 0;
+                            continue;
                         } else if is_theme_submode {
                             buf = format!("/theme {}", selected);
+                        } else if is_clear_submode {
+                            buf = format!("/clear {}", selected);
                         } else {
                             buf = selected.clone();
                         }
@@ -189,12 +203,6 @@ fn read_chat_line_inner(aide: &Aide, history: &[String]) -> anyhow::Result<Optio
                     )?;
                     crossterm::execute!(
                         stdout(),
-                        SetForegroundColor(final_theme.bold_color()),
-                        SetAttribute(Attribute::Bold),
-                    )?;
-                    print!("{}", prompt_label);
-                    crossterm::execute!(
-                        stdout(),
                         SetForegroundColor(final_theme.headers_color()),
                         SetAttribute(Attribute::Reset),
                         SetBackgroundColor(final_theme.user_bg_color()),
@@ -212,8 +220,12 @@ fn read_chat_line_inner(aide: &Aide, history: &[String]) -> anyhow::Result<Optio
                         let selected = &menu_items[filtered[menu_sel as usize]].0;
                         if is_theme_submode {
                             buf = format!("/theme {}", selected);
+                        } else if is_clear_submode {
+                            buf = format!("/clear {}", selected);
                         } else if selected == "/theme" {
                             buf = "/theme ".to_string();
+                        } else if selected == "/clear" {
+                            buf = "/clear ".to_string();
                         } else {
                             buf = selected.clone();
                         }
