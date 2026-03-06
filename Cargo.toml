@@ -1,0 +1,17 @@
+[workspace]
+members = [
+    "apps/aide-cli", "apps/aide-core" 
+]
+
+resolver = "2"
+
+[workspace.dependencies]
+# Hardware information
+sysinfo = "0.30"
+# Async runtime
+tokio = { version = "1.36", features = ["full"] }
+# Error handling
+anyhow = "1.0"
+# Serialization
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"

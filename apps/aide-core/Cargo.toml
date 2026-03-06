@@ -1,0 +1,29 @@
+[package]
+name = "aide-core"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+# AI Inference
+llama-cpp-2 = "0.1.18"
+llama-cpp-sys-2 = "0.1"
+
+# SQLite memory
+rusqlite = { version = "0.31", features = ["bundled"] }
+
+# Path helper
+dirs = "5.0"
+
+# Terminal UI / Progress bars
+encoding_rs = "0.8"
+indicatif = "0.17"
+
+# Networking & Downloads
+reqwest = { version = "0.11", features = ["json", "stream"] }
+futures-util = "0.3"
+
+anyhow = { workspace = true }
+serde = { workspace = true, features = ["derive"] }
+serde_json = { workspace = true }
+sysinfo = { workspace = true }
+

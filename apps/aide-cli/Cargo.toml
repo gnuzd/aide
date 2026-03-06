@@ -1,0 +1,26 @@
+[package]
+name = "aide-cli"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+# CLI framework
+clap = { version = "4.4", features = ["derive"] }
+sysinfo = { workspace = true }
+tokio = { workspace = true }
+anyhow = { workspace = true }
+
+# Terminal UI / Progress bars
+indicatif = "0.17"
+colored = "2.1"
+dialoguer = "0.11"
+encoding_rs = "0.8"
+# Terminal events (ESC detection)
+crossterm = "0.27"
+# Markdown rendering in terminal
+termimad = "0.23"
+
+aide-core = { path = "../aide-core" }
+serde_json = { workspace = true }
+serde = { workspace = true }
+
