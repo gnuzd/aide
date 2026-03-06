@@ -1,6 +1,6 @@
 use crate::theme::{Theme, all_themes, get_theme};
 use aide_core::Aide;
-use crossterm::style::{SetBackgroundColor, SetForegroundColor, Color, ResetColor, Attribute, SetAttribute};
+use crossterm::style::{SetBackgroundColor, SetForegroundColor, ResetColor, Attribute, SetAttribute};
 use std::io::{Write, stdout};
 
 const CMDS: &[(&str, &str)] = &[
@@ -49,7 +49,7 @@ fn read_chat_line_inner(aide: &Aide, history: &[String]) -> anyhow::Result<Optio
     }
     let themes_list = all_themes(&custom_themes);
     let initial_theme_name = aide.config.active_theme.as_deref().unwrap_or("gruvbox").to_string();
-    let mut current_theme = get_theme(&initial_theme_name, &custom_themes);
+    let mut current_theme; // Will be set in the loop
 
     let mut buf = String::new();
     let mut cursor_pos: usize = 0;
@@ -174,7 +174,8 @@ fn read_chat_line_inner(aide: &Aide, history: &[String]) -> anyhow::Result<Optio
 
                     // Final render of the submitted line
                     let final_theme = if buf.starts_with("/theme ") {
-                        get_theme(&buf[7..], &custom_themes)
+                        let target = buf[7..].trim();
+                        get_theme(target, &custom_themes)
                     } else {
                         get_theme(&initial_theme_name, &custom_themes)
                     };
@@ -182,8 +183,9 @@ fn read_chat_line_inner(aide: &Aide, history: &[String]) -> anyhow::Result<Optio
                     crossterm::execute!(
                         stdout(), 
                         MoveToColumn(0), 
+                        Clear(ClearType::FromCursorDown),
                         SetBackgroundColor(final_theme.user_bg_color()), 
-                        Clear(ClearType::FromCursorDown)
+                        Clear(ClearType::CurrentLine)
                     )?;
                     crossterm::execute!(
                         stdout(),

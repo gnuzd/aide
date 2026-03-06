@@ -5,9 +5,8 @@ use aide_core::models::inference::InferenceEngine;
 use aide_core::system::SystemSpecs;
 use colored::*;
 use crossterm::style::{
-    Attribute, ResetColor, SetAttribute, SetBackgroundColor, SetForegroundColor,
+    Attribute, SetAttribute, SetForegroundColor,
 };
-use crossterm::terminal::{Clear, ClearType};
 use std::io::{Write, stdout};
 use std::sync::atomic::AtomicBool;
 
