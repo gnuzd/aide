@@ -8,7 +8,10 @@ use crossterm::style::{
     Attribute, SetAttribute, SetForegroundColor,
 };
 use std::io::{Write, stdout};
-use std::sync::atomic::AtomicBool;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::time::Duration;
+use crossterm::event::{self, Event, KeyCode, KeyEventKind, KeyModifiers};
+use crossterm::terminal::{enable_raw_mode, disable_raw_mode};
 
 pub fn run_chat_loop(
     aide: &mut Aide,
@@ -242,7 +245,9 @@ pub fn run_chat_loop(
         let mut response_full = String::new();
         let mut first_token = true;
 
-        engine.ask_stream(&line, &chat_history, 1024, &system_prompt, &stop, |token| {
+        let _ = enable_raw_mode();
+        stop.store(false, Ordering::Relaxed);
+        let res = engine.ask_stream(&line, &chat_history, 1024, &system_prompt, &stop, |token| {
             if first_token {
                 // Clear "Thinking..." (11 chars)
                 print!("\r");
@@ -259,12 +264,27 @@ pub fn run_chat_loop(
                 ).unwrap();
                 first_token = false;
             }
-            print!("{}", token);
+            // In raw mode, \n needs \r to return to column 0
+            let out = token.replace('\n', "\r\n");
+            print!("{}", out);
             stdout().flush().unwrap();
             response_full.push_str(token);
-        })?;
 
-        print!("\n\n");
+            // Check for ESC or Ctrl+C to cancel streaming
+            while event::poll(Duration::from_millis(0)).unwrap_or(false) {
+                if let Ok(Event::Key(key)) = event::read() {
+                    if key.kind == KeyEventKind::Press {
+                        if key.code == KeyCode::Esc || (key.code == KeyCode::Char('c') && key.modifiers.contains(KeyModifiers::CONTROL)) {
+                            stop.store(true, Ordering::Relaxed);
+                        }
+                    }
+                }
+            }
+        });
+        let _ = disable_raw_mode();
+        res?;
+
+        print!("\r\n\n");
         stdout().flush()?;
 
         // Save to memory
