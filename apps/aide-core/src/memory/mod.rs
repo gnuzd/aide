@@ -3,6 +3,7 @@ use rusqlite::{Connection, params};
 use std::path::PathBuf;
 use std::time::{SystemTime, UNIX_EPOCH};
 use fastembed::{TextEmbedding, InitOptions, EmbeddingModel};
+use tracing::{info, error, debug};
 
 pub struct MemoryStore {
     conn: Connection,
@@ -137,15 +138,24 @@ const PROJECT_SIGNALS: &[&str] = &[
 
 impl MemoryStore {
     pub fn init_db(base_path: &PathBuf) -> Result<Self> {
+        info!("Initializing memory store at {:?}", base_path);
         std::fs::create_dir_all(base_path)?;
         let db_path = base_path.join("memory.db");
-        let conn = Connection::open(&db_path)?;
+        let conn = Connection::open(&db_path).map_err(|e| {
+            error!("Failed to open memory database: {}", e);
+            e
+        })?;
 
+        debug!("Loading embedding model...");
         let embedding_model = TextEmbedding::try_new(
             InitOptions::new(EmbeddingModel::AllMiniLML6V2)
-        ).map_err(|e| anyhow!("Embedding model init failed: {}", e))?;
+        ).map_err(|e| {
+            error!("Embedding model init failed: {}", e);
+            anyhow!("Embedding model init failed: {}", e)
+        })?;
 
         conn.execute_batch("PRAGMA journal_mode=WAL;")?;
+        debug!("Creating database schema if needed...");
         conn.execute_batch("
             CREATE TABLE IF NOT EXISTS conversations (
                 id                 INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -175,27 +185,41 @@ impl MemoryStore {
 
     pub fn store_semantic(&self, text: &str) -> Result<()> {
         if text.trim().is_empty() { return Ok(()); }
+        debug!("Storing semantic fact: \"{}\"", text.chars().take(50).collect::<String>());
         let embeddings = self.embedding_model.embed(vec![text], None)
-            .map_err(|e| anyhow!("Embedding failed: {}", e))?;
+            .map_err(|e| {
+                error!("Embedding failed: {}", e);
+                anyhow!("Embedding failed: {}", e)
+            })?;
         let vector_blob = bincode::serialize(&embeddings[0])?;
 
         self.conn.execute(
             "INSERT INTO long_term_memory (content, vector, timestamp) VALUES (?1, ?2, ?3)",
             params![text, vector_blob, now_iso8601()],
-        )?;
+        ).map_err(|e| {
+            error!("Failed to insert semantic fact: {}", e);
+            e
+        })?;
         Ok(())
     }
 
     pub fn search_semantic(&self, query: &str, limit: usize) -> Result<Vec<String>> {
         if query.trim().is_empty() { return Ok(vec![]); }
+        debug!("Searching semantic memory for: \"{}\"", query);
         let query_vec = self.embedding_model.embed(vec![query], None)
-            .map_err(|e| anyhow!("Query embedding failed: {}", e))?[0].clone();
+            .map_err(|e| {
+                error!("Query embedding failed: {}", e);
+                anyhow!("Query embedding failed: {}", e)
+            })?[0].clone();
 
         let mut stmt = self.conn.prepare("SELECT content, vector FROM long_term_memory")?;
         let rows = stmt.query_map([], |row| {
             let content: String = row.get(0)?;
             let vec_blob: Vec<u8> = row.get(1)?;
-            let vec: Vec<f32> = bincode::deserialize(&vec_blob).unwrap_or_default();
+            let vec: Vec<f32> = bincode::deserialize(&vec_blob).map_err(|e| {
+                error!("Failed to deserialize vector: {}", e);
+                rusqlite::Error::ExecuteReturnedResults
+            })?;
             Ok((content, vec))
         })?;
 
@@ -208,6 +232,7 @@ impl MemoryStore {
                 }
             }
         }
+        debug!("Found {} semantic matches.", results.len());
 
         results.sort_by(|a, b| b.0.partial_cmp(&a.0).unwrap_or(std::cmp::Ordering::Equal));
         Ok(results.into_iter().take(limit).map(|(_, c)| c).collect())

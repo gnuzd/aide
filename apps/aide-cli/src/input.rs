@@ -4,13 +4,16 @@ use crossterm::style::{SetBackgroundColor, SetForegroundColor, ResetColor, Attri
 use std::io::{Write, stdout};
 
 const CMDS: &[(&str, &str)] = &[
+    ("/bug", "report an issue with logs"),
     (
         "/clear",
         "clear data (conversations, profile, models, config)",
     ),
+    ("/exit", "exit the application"),
     ("/help", "show this help"),
     ("/memory", "show what Aide currently knows about you"),
     ("/models", "list available models"),
+    ("/quit", "exit the application"),
     ("/system", "show system information"),
     ("/theme", "list or switch color themes"),
 ];
@@ -29,14 +32,14 @@ fn next_char(pos: usize, s: &str) -> usize {
     i
 }
 
-pub fn read_chat_line(aide: &Aide, history: &[String]) -> anyhow::Result<Option<String>> {
+pub fn read_chat_line(aide: &Aide, _history: &[String]) -> anyhow::Result<Option<String>> {
     crossterm::terminal::enable_raw_mode()?;
-    let result = read_chat_line_inner(aide, history);
+    let result = read_chat_line_inner(aide, _history);
     let _ = crossterm::terminal::disable_raw_mode();
     result
 }
 
-fn read_chat_line_inner(aide: &Aide, history: &[String]) -> anyhow::Result<Option<String>> {
+fn read_chat_line_inner(aide: &Aide, _history: &[String]) -> anyhow::Result<Option<String>> {
     use crossterm::cursor::{MoveToColumn, MoveUp};
     use crossterm::event::{Event, KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
     use crossterm::terminal::{Clear, ClearType};
@@ -53,7 +56,6 @@ fn read_chat_line_inner(aide: &Aide, history: &[String]) -> anyhow::Result<Optio
 
     let mut buf = String::new();
     let mut cursor_pos: usize = 0;
-    let mut hist_idx: Option<usize> = None;
     let mut menu_sel: i32 = -1;
 
     loop {
@@ -249,30 +251,17 @@ fn read_chat_line_inner(aide: &Aide, history: &[String]) -> anyhow::Result<Optio
                 KeyCode::Up => {
                     if !filtered.is_empty() {
                         menu_sel = if menu_sel <= 0 { filtered.len() as i32 - 1 } else { menu_sel - 1 };
-                    } else if !history.is_empty() {
-                        let new_idx = match hist_idx {
-                            None => history.len() - 1,
-                            Some(i) if i > 0 => i - 1,
-                            Some(i) => i,
-                        };
-                        hist_idx = Some(new_idx); buf = history[new_idx].clone(); cursor_pos = buf.len();
                     }
                 }
                 KeyCode::Down => {
                     if !filtered.is_empty() {
                         menu_sel = if menu_sel >= filtered.len() as i32 - 1 { 0 } else { menu_sel + 1 };
-                    } else {
-                        match hist_idx {
-                            None => {}
-                            Some(i) if i + 1 >= history.len() => { hist_idx = None; buf.clear(); cursor_pos = 0; }
-                            Some(i) => { hist_idx = Some(i + 1); buf = history[i + 1].clone(); cursor_pos = buf.len(); }
-                        }
                     }
                 }
                 KeyCode::Backspace => {
                     if cursor_pos > 0 {
                         let prev = prev_char(cursor_pos, &buf);
-                        buf.drain(prev..cursor_pos); cursor_pos = prev; menu_sel = -1; hist_idx = None;
+                        buf.drain(prev..cursor_pos); cursor_pos = prev; menu_sel = -1;
                     }
                 }
                 KeyCode::Delete => {
@@ -286,7 +275,7 @@ fn read_chat_line_inner(aide: &Aide, history: &[String]) -> anyhow::Result<Optio
                 KeyCode::Home => cursor_pos = 0,
                 KeyCode::End => cursor_pos = buf.len(),
                 KeyCode::Char(c) => {
-                    buf.insert(cursor_pos, c); cursor_pos += c.len_utf8(); menu_sel = -1; hist_idx = None;
+                    buf.insert(cursor_pos, c); cursor_pos += c.len_utf8(); menu_sel = -1;
                 }
                 _ => {}
             }

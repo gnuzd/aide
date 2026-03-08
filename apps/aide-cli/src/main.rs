@@ -11,6 +11,10 @@ use aide_core::Aide;
 async fn main() -> anyhow::Result<()> {
     let cli = Cli::parse();
     
+    // Initialize registry to get base_path for logging
+    let registry = aide_core::models::ModelRegistry::new();
+    let _ = aide_core::system::logging::init_logging(&registry.base_path);
+
     loop {
         let mut aide = Aide::new()?;
         aide.init().await?;

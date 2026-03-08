@@ -1,6 +1,8 @@
 use sysinfo::System;
 use serde::{Serialize, Deserialize};
 
+pub mod logging;
+
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct SystemSpecs {
     pub os_name: String,

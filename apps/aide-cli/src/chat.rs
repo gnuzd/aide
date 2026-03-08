@@ -98,6 +98,7 @@ pub async fn run_chat_loop(
             match cmd {
                 "/help" => {
                     println!("\n{}", "Available Commands:".bold().yellow());
+                    println!("  /bug            - Report an issue with logs");
                     println!("  /clear [arg]    - Clear data (all, chat, profile, models, config)");
                     println!("  /exit, /quit    - Exit the application");
                     println!("  /help           - Show this help message");
@@ -105,6 +106,13 @@ pub async fn run_chat_loop(
                     println!("  /models         - List available and downloaded models");
                     println!("  /system         - Show system information");
                     println!("  /theme [name]   - List or switch color themes");
+                }
+                "/bug" => {
+                    println!("\n{}", "Reporting a bug:".bold().yellow());
+                    println!("  If Aide is misbehaving or crashed, please check the logs at:");
+                    println!("  {}", aide.registry.base_path.join("logs").display().to_string().cyan());
+                    println!("\n  You can open an issue at: https://github.com/google-gemini/aide/issues");
+                    println!("  Please attach the latest log file to your report.");
                 }
                 "/exit" | "/quit" => {
                     break;
