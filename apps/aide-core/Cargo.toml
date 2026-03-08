@@ -11,6 +11,10 @@ llama-cpp-sys-2 = "0.1"
 # SQLite memory
 rusqlite = { version = "0.31", features = ["bundled"] }
 
+# Semantic Memory
+fastembed = "4.0"
+bincode = "1.3"
+
 # Path helper
 dirs = "5.0"
 

@@ -1,10 +1,12 @@
-use anyhow::Result;
+use anyhow::{Result, anyhow};
 use rusqlite::{Connection, params};
 use std::path::PathBuf;
 use std::time::{SystemTime, UNIX_EPOCH};
+use fastembed::{TextEmbedding, InitOptions, EmbeddingModel};
 
 pub struct MemoryStore {
     conn: Connection,
+    embedding_model: TextEmbedding,
 }
 
 fn now_iso8601() -> String {
@@ -139,6 +141,10 @@ impl MemoryStore {
         let db_path = base_path.join("memory.db");
         let conn = Connection::open(&db_path)?;
 
+        let embedding_model = TextEmbedding::try_new(
+            InitOptions::new(EmbeddingModel::AllMiniLML6V2)
+        ).map_err(|e| anyhow!("Embedding model init failed: {}", e))?;
+
         conn.execute_batch("PRAGMA journal_mode=WAL;")?;
         conn.execute_batch("
             CREATE TABLE IF NOT EXISTS conversations (
@@ -155,9 +161,56 @@ impl MemoryStore {
                 value        TEXT NOT NULL,
                 last_updated TEXT NOT NULL
             );
+
+            CREATE TABLE IF NOT EXISTS long_term_memory (
+                id INTEGER PRIMARY KEY,
+                content TEXT NOT NULL,
+                vector BLOB NOT NULL,
+                timestamp TEXT NOT NULL
+            );
         ")?;
 
-        Ok(Self { conn })
+        Ok(Self { conn, embedding_model })
+    }
+
+    pub fn store_semantic(&self, text: &str) -> Result<()> {
+        if text.trim().is_empty() { return Ok(()); }
+        let embeddings = self.embedding_model.embed(vec![text], None)
+            .map_err(|e| anyhow!("Embedding failed: {}", e))?;
+        let vector_blob = bincode::serialize(&embeddings[0])?;
+
+        self.conn.execute(
+            "INSERT INTO long_term_memory (content, vector, timestamp) VALUES (?1, ?2, ?3)",
+            params![text, vector_blob, now_iso8601()],
+        )?;
+        Ok(())
+    }
+
+    pub fn search_semantic(&self, query: &str, limit: usize) -> Result<Vec<String>> {
+        if query.trim().is_empty() { return Ok(vec![]); }
+        let query_vec = self.embedding_model.embed(vec![query], None)
+            .map_err(|e| anyhow!("Query embedding failed: {}", e))?[0].clone();
+
+        let mut stmt = self.conn.prepare("SELECT content, vector FROM long_term_memory")?;
+        let rows = stmt.query_map([], |row| {
+            let content: String = row.get(0)?;
+            let vec_blob: Vec<u8> = row.get(1)?;
+            let vec: Vec<f32> = bincode::deserialize(&vec_blob).unwrap_or_default();
+            Ok((content, vec))
+        })?;
+
+        let mut results = Vec::new();
+        for row in rows {
+            if let Ok((content, vec)) = row {
+                let score = cosine_similarity(&query_vec, &vec);
+                if score > 0.4 { // Threshold for relevance
+                    results.push((score, content));
+                }
+            }
+        }
+
+        results.sort_by(|a, b| b.0.partial_cmp(&a.0).unwrap_or(std::cmp::Ordering::Equal));
+        Ok(results.into_iter().take(limit).map(|(_, c)| c).collect())
     }
 
     pub fn save_turn(&self, session_id: &str, turn: u32, user_msg: &str, response: &str) -> Result<()> {
@@ -166,12 +219,61 @@ impl MemoryStore {
              VALUES (?1, ?2, ?3, ?4, ?5)",
             params![session_id, turn, user_msg, response, now_iso8601()],
         )?;
+
+        // Automatically store this turn in semantic memory for long-term recall
+        // We store the user's input paired with Aide's response to provide context
+        let semantic_entry = format!("User: {}\nAide: {}", user_msg, response);
+        let _ = self.store_semantic(&semantic_entry);
+
         Ok(())
     }
 
-    pub fn extract_and_learn(&self, user_message: &str) -> Result<()> {
+    pub fn extract_and_learn(&self, user_message: &str, prev_assistant_msg: Option<&str>) -> Result<()> {
+        let user_trim = user_message.trim();
         // Pad with spaces so patterns like " go " match at start/end of message too
-        let lower = format!(" {} ", user_message.to_lowercase());
+        let lower = format!(" {} ", user_trim.to_lowercase());
+
+        // Contextual auto-memory: if Aide asked a question, the user's response is an important fact.
+        if let Some(prev) = prev_assistant_msg {
+            let prev_trim = prev.trim();
+            // Check if previous message contained a question mark, not just ended with one
+            if prev_trim.contains('?') {
+                // This is likely an answer to a question. Store it semantically.
+                let contextual_fact = format!("Aide asked: {}\nUser answered: {}", prev_trim, user_trim);
+                let _ = self.store_semantic(&contextual_fact);
+            }
+        }
+
+        // Self-introduction patterns
+        let intro_patterns = [
+            "my name is ",
+            "i am ",
+            "i'm ",
+            "call me ",
+            "everyone calls me ",
+            "i live in ",
+            "i'm from ",
+            "im from ",
+            "my favorite ",
+            "i like ",
+            "i love ",
+            "i hate ",
+            "i don't like ",
+            "dont like ",
+            "my hobby is ",
+            "my work is ",
+            "i work at ",
+            "i work as ",
+        ];
+        for intro in intro_patterns {
+            if lower.contains(&format!(" {} ", intro)) || lower.trim().starts_with(intro) {
+                // Store the whole sentence or just the fact?
+                // Let's store the whole message as a potential identity fact if it's short
+                if user_trim.len() < 100 {
+                    let _ = self.store_semantic(&format!("User identity/intro: {}", user_trim));
+                }
+            }
+        }
 
         // Languages
         let mut found_langs: Vec<&str> = Vec::new();
@@ -267,6 +369,8 @@ impl MemoryStore {
                         };
                         self.upsert_profile("remembered_facts", &new_val)?;
                     }
+                    // Trigger semantic storage
+                    let _ = self.store_semantic(fact);
                 }
                 break;
             }
@@ -282,7 +386,9 @@ impl MemoryStore {
         let base = "You are Aide, a helpful assistant. \
 When the user specifically asks you to create, generate, or produce an image, first describe what you're creating, \
 then return a fenced code block with language 'image-prompt' containing a detailed, high-quality prompt for Stable Diffusion. \
-Otherwise, chat normally and do not output image prompts. Do not output base64 data, and do not output Python or shell commands for image generation.";
+Otherwise, chat normally and do not output image prompts. Do not output base64 data, and do not output Python or shell commands for image generation. \
+IMPORTANT: If you don't know something about the user (like their name, preference, or context) and it's relevant to the conversation, \
+feel free to ask them. You have long-term memory and will remember their answers for future sessions.";
 
         let languages = self.get_profile_value("languages_mentioned").unwrap_or_default();
         let skill = self.get_profile_value("skill_level").unwrap_or_default();
@@ -354,6 +460,12 @@ Otherwise, chat normally and do not output image prompts. Do not output base64 d
             .unwrap_or(0)
     }
 
+    pub fn semantic_facts_count(&self) -> i64 {
+        self.conn
+            .query_row("SELECT COUNT(*) FROM long_term_memory", [], |r| r.get(0))
+            .unwrap_or(0)
+    }
+
     pub fn clear_conversations(&self) -> Result<()> {
         self.conn.execute("DELETE FROM conversations", [])?;
         self.conn.execute("DELETE FROM user_profile WHERE key = 'total_turns'", [])?;
@@ -362,12 +474,29 @@ Otherwise, chat normally and do not output image prompts. Do not output base64 d
 
     pub fn clear_profile(&self) -> Result<()> {
         self.conn.execute("DELETE FROM user_profile", [])?;
+        self.conn.execute("DELETE FROM long_term_memory", [])?;
         Ok(())
     }
 
     pub fn clear_remembered_facts(&self) -> Result<()> {
         self.conn.execute("DELETE FROM user_profile WHERE key = 'remembered_facts'", [])?;
         Ok(())
+    }
+
+    pub fn load_recent_history(&self, limit: usize) -> Result<Vec<(String, String)>> {
+        let mut stmt = self.conn.prepare(
+            "SELECT user_message, assistant_response FROM conversations ORDER BY id DESC LIMIT ?1"
+        )?;
+        let rows = stmt.query_map(params![limit], |row| {
+            Ok((row.get(0)?, row.get(1)?))
+        })?;
+
+        let mut history = Vec::new();
+        for row in rows {
+            history.push(row?);
+        }
+        history.reverse();
+        Ok(history)
     }
 
     fn get_profile_value(&self, key: &str) -> Option<String> {
@@ -405,4 +534,12 @@ fn capitalize(s: &str) -> String {
         None => String::new(),
         Some(f) => f.to_uppercase().collect::<String>() + chars.as_str(),
     }
+}
+
+fn cosine_similarity(v1: &[f32], v2: &[f32]) -> f32 {
+    let dot: f32 = v1.iter().zip(v2).map(|(a, b)| a * b).sum();
+    let n1: f32 = v1.iter().map(|x| x * x).sum::<f32>().sqrt();
+    let n2: f32 = v2.iter().map(|x| x * x).sum::<f32>().sqrt();
+    if n1 == 0.0 || n2 == 0.0 { return 0.0; }
+    dot / (n1 * n2)
 }

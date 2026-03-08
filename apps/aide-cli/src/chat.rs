@@ -22,13 +22,17 @@ pub fn run_chat_loop(
     println!("Type '/' for commands or 'exit' to quit.\n");
 
     let mut chat_history: Vec<String> = Vec::new();
-    let stop = AtomicBool::new(false);
-    let mut turn_number = 0;
+    // Load last 10 turns (20 messages) of context from database
+    if let Ok(recent) = aide.memory.load_recent_history(10) {
+        for (u, a) in recent {
+            chat_history.push(format!("User: {}", u));
+            chat_history.push(format!("Assistant: {}", a));
+        }
+    }
 
-    let system_prompt = aide
-        .memory
-        .get_profile_summary()
-        .unwrap_or_else(|_| "You are Aide, a helpful assistant.".to_string());
+    let stop = AtomicBool::new(false);
+    let (stats_turns, _) = aide.memory.conversation_stats().unwrap_or((0, 0));
+    let mut turn_number = stats_turns as u32;
 
     loop {
         let input = match read_chat_line(aide, &chat_history)? {
@@ -44,6 +48,18 @@ pub fn run_chat_loop(
         }
         if line == "exit" || line == "quit" {
             break;
+        }
+
+        // Fetch semantic context from long-term memory
+        let semantic_facts = aide.memory.search_semantic(&line, 3).unwrap_or_default();
+        let mut turn_system_prompt = aide
+            .memory
+            .get_profile_summary()
+            .unwrap_or_else(|_| "You are Aide, a helpful assistant.".to_string());
+        
+        if !semantic_facts.is_empty() {
+            turn_system_prompt.push_str("\nRelevant facts from long-term memory: ");
+            turn_system_prompt.push_str(&semantic_facts.join("; "));
         }
 
         // Standard theme fetch
@@ -146,6 +162,9 @@ pub fn run_chat_loop(
                     let (turns, sessions) = aide.memory.conversation_stats()?;
                     println!("  Total Turns: {}", turns);
                     println!("  Total Sessions: {}", sessions);
+                    
+                    let semantic_count = aide.memory.semantic_facts_count();
+                    println!("  Semantic Facts: {}", semantic_count);
 
                     let summary = aide.memory.get_profile_summary()?;
                     println!("\n{}", "Profile Summary:".bold().cyan());
@@ -247,7 +266,7 @@ pub fn run_chat_loop(
 
         let _ = enable_raw_mode();
         stop.store(false, Ordering::Relaxed);
-        let res = engine.ask_stream(&line, &chat_history, 1024, &system_prompt, &stop, |token| {
+        let res = engine.ask_stream(&line, &chat_history, 1024, &turn_system_prompt, &stop, |token| {
             if first_token {
                 // Clear "Thinking..." (11 chars)
                 print!("\r");
@@ -287,12 +306,25 @@ pub fn run_chat_loop(
         print!("\r\n\n");
         stdout().flush()?;
 
+        if stop.load(Ordering::Relaxed) {
+            println!("{}", "Generation cancelled.".yellow());
+            continue;
+        }
+
         // Save to memory
         turn_number += 1;
         let _ = aide
             .memory
             .save_turn(session_id, turn_number, &line, &response_full);
-        let _ = aide.memory.extract_and_learn(&line);
+        
+        let prev_assistant = if chat_history.len() >= 2 {
+            // chat_history format is ["User: ...", "Assistant: ..."]
+            // We want the last assistant message BEFORE this turn
+            chat_history.last().map(|s| s.strip_prefix("Assistant: ").unwrap_or(s))
+        } else {
+            None
+        };
+        let _ = aide.memory.extract_and_learn(&line, prev_assistant);
 
         chat_history.push(format!("User: {}", line));
         chat_history.push(format!("Assistant: {}", response_full));
