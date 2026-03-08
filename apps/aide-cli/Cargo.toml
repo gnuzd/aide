@@ -23,4 +23,5 @@ termimad = "0.23"
 aide-core = { path = "../aide-core" }
 serde_json = { workspace = true }
 serde = { workspace = true }
+syntect = "5.3.0"
 

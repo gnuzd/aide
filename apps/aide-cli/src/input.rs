@@ -13,7 +13,6 @@ const CMDS: &[(&str, &str)] = &[
     ("/help", "show this help"),
     ("/memory", "show what Aide currently knows about you"),
     ("/models", "list available models"),
-    ("/quit", "exit the application"),
     ("/system", "show system information"),
     ("/theme", "list or switch color themes"),
 ];
@@ -32,14 +31,14 @@ fn next_char(pos: usize, s: &str) -> usize {
     i
 }
 
-pub fn read_chat_line(aide: &Aide, _history: &[String]) -> anyhow::Result<Option<String>> {
+pub fn read_chat_line(aide: &Aide) -> anyhow::Result<Option<String>> {
     crossterm::terminal::enable_raw_mode()?;
-    let result = read_chat_line_inner(aide, _history);
+    let result = read_chat_line_inner(aide);
     let _ = crossterm::terminal::disable_raw_mode();
     result
 }
 
-fn read_chat_line_inner(aide: &Aide, _history: &[String]) -> anyhow::Result<Option<String>> {
+fn read_chat_line_inner(aide: &Aide) -> anyhow::Result<Option<String>> {
     use crossterm::cursor::{MoveToColumn, MoveUp};
     use crossterm::event::{Event, KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
     use crossterm::terminal::{Clear, ClearType};
@@ -52,14 +51,14 @@ fn read_chat_line_inner(aide: &Aide, _history: &[String]) -> anyhow::Result<Opti
     }
     let themes_list = all_themes(&custom_themes);
     let initial_theme_name = aide.config.active_theme.as_deref().unwrap_or("gruvbox").to_string();
-    let mut current_theme; // Will be set in the loop
+    let mut current_theme;
 
     let mut buf = String::new();
     let mut cursor_pos: usize = 0;
     let mut menu_sel: i32 = -1;
+    let mut last_had_menu = false;
 
     loop {
-        // Mode detection
         let is_theme_submode = buf.starts_with("/theme ");
         let is_clear_submode = buf.starts_with("/clear ");
         let show_menu = buf.starts_with('/');
@@ -69,7 +68,7 @@ fn read_chat_line_inner(aide: &Aide, _history: &[String]) -> anyhow::Result<Opti
             let items: Vec<(String, String)> = themes_list.iter().map(|t| (t.name.clone(), "theme".to_string())).collect();
             let filtered_indices: Vec<usize> = items.iter()
                 .enumerate()
-                .filter(|(_, (name, _))| name.starts_with(filter_text))
+                .filter(|(_, item)| item.0.starts_with(filter_text))
                 .map(|(i, _)| i)
                 .collect();
             (items, filtered_indices)
@@ -84,7 +83,7 @@ fn read_chat_line_inner(aide: &Aide, _history: &[String]) -> anyhow::Result<Opti
             ].into_iter().map(|(a, d): (&str, &str)| (a.to_string(), d.to_string())).collect();
             let filtered_indices: Vec<usize> = items.iter()
                 .enumerate()
-                .filter(|(_, (name, _))| name.starts_with(filter_text))
+                .filter(|(_, item)| item.0.starts_with(filter_text))
                 .map(|(i, _)| i)
                 .collect();
             (items, filtered_indices)
@@ -92,7 +91,7 @@ fn read_chat_line_inner(aide: &Aide, _history: &[String]) -> anyhow::Result<Opti
             let items: Vec<(String, String)> = CMDS.iter().map(|(c, d)| (c.to_string(), d.to_string())).collect();
             let filtered_indices: Vec<usize> = items.iter()
                 .enumerate()
-                .filter(|(_, (cmd, _))| cmd.starts_with(&buf))
+                .filter(|(_, item)| item.0.starts_with(&buf))
                 .map(|(i, _)| i)
                 .collect();
             (items, filtered_indices)
@@ -106,7 +105,6 @@ fn read_chat_line_inner(aide: &Aide, _history: &[String]) -> anyhow::Result<Opti
             menu_sel = menu_sel.max(0).min(filtered.len() as i32 - 1);
         }
 
-        // Preview logic
         if is_theme_submode && menu_sel >= 0 {
             let theme_idx = filtered[menu_sel as usize];
             current_theme = themes_list[theme_idx].clone();
@@ -114,34 +112,24 @@ fn read_chat_line_inner(aide: &Aide, _history: &[String]) -> anyhow::Result<Opti
             current_theme = get_theme(&initial_theme_name, &custom_themes);
         }
 
-        let vis_cursor = buf[..cursor_pos].chars().count() as u16;
-        let menu_rows = filtered.len() as u16;
-        let prompt_sep = " > ";
+        let prompt_sep = "User: ";
         let prompt_cols: u16 = prompt_sep.len() as u16;
+        let menu_rows = filtered.len() as u16;
 
-        // ── REDRAW ──
-        crossterm::execute!(stdout(), MoveToColumn(0), Clear(ClearType::FromCursorDown))?;
+        // REDRAW
+        crossterm::execute!(stdout(), MoveToColumn(0))?;
+        if last_had_menu {
+            crossterm::execute!(stdout(), Clear(ClearType::FromCursorDown))?;
+        } else {
+            crossterm::execute!(stdout(), Clear(ClearType::CurrentLine))?;
+        }
         
-        // Background for the whole line
-        crossterm::execute!(stdout(), SetBackgroundColor(current_theme.user_bg_color()))?;
-        crossterm::execute!(stdout(), Clear(ClearType::CurrentLine))?;
-        
-        // Print " > " (Headers color)
-        crossterm::execute!(
-            stdout(),
-            SetForegroundColor(current_theme.headers_color()),
-            SetAttribute(Attribute::Reset),
-            SetBackgroundColor(current_theme.user_bg_color()),
-        )?;
+        crossterm::execute!(stdout(), SetBackgroundColor(current_theme.user_bg_color()), Clear(ClearType::CurrentLine))?;
+        crossterm::execute!(stdout(), SetForegroundColor(current_theme.h1_color()), SetAttribute(Attribute::Bold))?;
         print!("{}", prompt_sep);
-        
-        // Print buffer (User FG color)
-        crossterm::execute!(stdout(), SetForegroundColor(current_theme.user_fg_color()))?;
+        crossterm::execute!(stdout(), SetForegroundColor(current_theme.user_fg_color()), SetAttribute(Attribute::Reset), SetBackgroundColor(current_theme.user_bg_color()))?;
         print!("{}", buf);
-        
-        // Ensure background spans full width
         crossterm::execute!(stdout(), Clear(ClearType::UntilNewLine))?;
-        crossterm::execute!(stdout(), ResetColor)?;
 
         if show_menu && !filtered.is_empty() {
             for (menu_i, &idx) in filtered.iter().enumerate() {
@@ -152,11 +140,14 @@ fn read_chat_line_inner(aide: &Aide, _history: &[String]) -> anyhow::Result<Opti
                     print!("\r\n  \x1b[2m{:<15}  {}\x1b[0m", name, desc);
                 }
             }
+            let vis_cursor = buf[..cursor_pos].chars().count() as u16;
             crossterm::execute!(stdout(), MoveUp(menu_rows), MoveToColumn(prompt_cols + vis_cursor))?;
         } else {
+            let vis_cursor = buf[..cursor_pos].chars().count() as u16;
             crossterm::execute!(stdout(), MoveToColumn(prompt_cols + vis_cursor))?;
         }
         stdout().flush()?;
+        last_had_menu = show_menu && !filtered.is_empty();
 
         let event = crossterm::event::read()?;
         if let Event::Key(KeyEvent { code, modifiers, kind, .. }) = event {
@@ -166,51 +157,20 @@ fn read_chat_line_inner(aide: &Aide, _history: &[String]) -> anyhow::Result<Opti
                     if menu_sel >= 0 && !filtered.is_empty() {
                         let selected = &menu_items[filtered[menu_sel as usize]].0;
                         if selected == "/theme" && !is_theme_submode {
-                            buf = "/theme ".to_string();
-                            cursor_pos = buf.len();
-                            menu_sel = 0;
-                            continue;
-                        } else if selected == "/clear" && !is_clear_submode {
-                            buf = "/clear ".to_string();
-                            cursor_pos = buf.len();
-                            menu_sel = 0;
-                            continue;
+                            buf = "/theme ".to_string(); cursor_pos = buf.len(); menu_sel = 0; continue;
                         } else if is_theme_submode {
                             buf = format!("/theme {}", selected);
-                        } else if is_clear_submode {
-                            buf = format!("/clear {}", selected);
                         } else {
                             buf = selected.clone();
                         }
                     }
+                    if buf.trim() == "/" { buf.clear(); cursor_pos = 0; menu_sel = -1; continue; }
                     
-                    if buf.trim() == "/" {
-                        buf.clear(); cursor_pos = 0; menu_sel = -1; continue;
-                    }
-
-                    // Final render of the submitted line
-                    let final_theme = if buf.starts_with("/theme ") {
-                        let target = buf[7..].trim();
-                        get_theme(target, &custom_themes)
-                    } else {
-                        get_theme(&initial_theme_name, &custom_themes)
-                    };
-
-                    crossterm::execute!(
-                        stdout(), 
-                        MoveToColumn(0), 
-                        Clear(ClearType::FromCursorDown),
-                        SetBackgroundColor(final_theme.user_bg_color()), 
-                        Clear(ClearType::CurrentLine)
-                    )?;
-                    crossterm::execute!(
-                        stdout(),
-                        SetForegroundColor(final_theme.headers_color()),
-                        SetAttribute(Attribute::Reset),
-                        SetBackgroundColor(final_theme.user_bg_color()),
-                    )?;
+                    crossterm::execute!(stdout(), MoveToColumn(0), Clear(ClearType::FromCursorDown))?;
+                    crossterm::execute!(stdout(), SetBackgroundColor(current_theme.user_bg_color()), Clear(ClearType::CurrentLine))?;
+                    crossterm::execute!(stdout(), SetForegroundColor(current_theme.h1_color()), SetAttribute(Attribute::Bold))?;
                     print!("{}", prompt_sep);
-                    crossterm::execute!(stdout(), SetForegroundColor(final_theme.user_fg_color()))?;
+                    crossterm::execute!(stdout(), SetForegroundColor(current_theme.user_fg_color()), SetAttribute(Attribute::Reset), SetBackgroundColor(current_theme.user_bg_color()))?;
                     print!("{}", buf);
                     crossterm::execute!(stdout(), Clear(ClearType::UntilNewLine), ResetColor)?;
                     print!("\r\n");
@@ -220,33 +180,18 @@ fn read_chat_line_inner(aide: &Aide, _history: &[String]) -> anyhow::Result<Opti
                 KeyCode::Tab => {
                     if menu_sel >= 0 && !filtered.is_empty() {
                         let selected = &menu_items[filtered[menu_sel as usize]].0;
-                        if is_theme_submode {
-                            buf = format!("/theme {}", selected);
-                        } else if is_clear_submode {
-                            buf = format!("/clear {}", selected);
-                        } else if selected == "/theme" {
-                            buf = "/theme ".to_string();
-                        } else if selected == "/clear" {
-                            buf = "/clear ".to_string();
-                        } else {
-                            buf = selected.clone();
-                        }
-                        cursor_pos = buf.len();
-                        menu_sel = 0;
+                        if is_theme_submode { buf = format!("/theme {}", selected); }
+                        else if selected == "/theme" { buf = "/theme ".to_string(); }
+                        else { buf = selected.clone(); }
+                        cursor_pos = buf.len(); menu_sel = 0;
                     }
                 }
                 KeyCode::Esc => {
-                    if show_menu || menu_sel >= 0 {
-                        buf.clear(); cursor_pos = 0; menu_sel = -1;
-                    } else {
-                        return Ok(Some(String::new()));
-                    }
+                    if show_menu || menu_sel >= 0 { buf.clear(); cursor_pos = 0; menu_sel = -1; }
+                    else { return Ok(Some(String::new())); }
                 }
                 KeyCode::Char('c') if modifiers.contains(KeyModifiers::CONTROL) => {
                     print!("\r\n"); stdout().flush()?; return Ok(None);
-                }
-                KeyCode::Char('d') if modifiers.contains(KeyModifiers::CONTROL) => {
-                    if buf.is_empty() { print!("\r\n"); stdout().flush()?; return Ok(None); }
                 }
                 KeyCode::Up => {
                     if !filtered.is_empty() {
