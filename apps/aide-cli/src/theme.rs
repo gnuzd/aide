@@ -49,14 +49,6 @@ impl Theme {
         let (r, g, b) = parse_hex(&self.headers);
         Color::Rgb { r, g, b }
     }
-    pub fn bold_color(&self) -> Color {
-        let (r, g, b) = parse_hex(&self.bold);
-        Color::Rgb { r, g, b }
-    }
-    pub fn code_bg_color(&self) -> Color {
-        let (r, g, b) = parse_hex(&self.code_bg);
-        Color::Rgb { r, g, b }
-    }
 }
 
 /// Parse "#rrggbb" → (r, g, b).  Falls back to white on any error.
@@ -72,11 +64,6 @@ pub fn parse_hex(hex: &str) -> (u8, u8, u8) {
         }
     }
     (0xff, 0xff, 0xff)
-}
-
-pub fn is_valid_hex(hex: &str) -> bool {
-    let h = hex.trim_start_matches('#');
-    h.len() == 6 && h.chars().all(|c| c.is_ascii_hexdigit())
 }
 
 /// All built-in themes in display order.
