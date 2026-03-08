@@ -20,7 +20,7 @@ async fn main() -> anyhow::Result<()> {
         match cli.command {
             Some(Commands::Chat) | None => {
                 let engine = aide.create_inference_engine()?;
-                chat::run_chat_loop(&mut aide, engine, &session_id)?;
+                chat::run_chat_loop(&mut aide, engine, &session_id).await?;
                 // After chat ends, we check if it was a normal exit or reset exit.
                 // For now, if chat loop finishes normally (not an error), break.
                 // But wait — if it's a reset, chat returns Ok(()).

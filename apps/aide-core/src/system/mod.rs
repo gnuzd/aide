@@ -49,15 +49,17 @@ impl SystemSpecs {
         let mut warnings = Vec::new();
         let mut is_compatible = true;
 
-        if self.total_memory_gb < 8 {
-            warnings.push("Minimum 8GB RAM recommended for local AI. 16GB+ preferred.".to_string());
-        }
-
-        if self.cpu_cores < 4 {
-            warnings.push("At least 4 CPU cores recommended for smooth performance.".to_string());
-        }
-
         if self.total_memory_gb < 4 {
+            warnings.push("Limited RAM detected. Aide will suggest extremely small models.".to_string());
+        } else if self.total_memory_gb < 8 {
+            warnings.push("8GB+ RAM is recommended for better quality models.".to_string());
+        }
+
+        if self.cpu_cores < 2 {
+            warnings.push("Single-core CPU detected. Performance may be very slow.".to_string());
+        }
+
+        if self.total_memory_gb < 2 {
             is_compatible = false;
         }
 

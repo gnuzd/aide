@@ -100,9 +100,12 @@ impl Aide {
             }
 
             if !compatible {
-                println!("Error: Your system does not meet the minimum requirements (4GB RAM) for local AI.");
+                println!("Error: Your system does not meet the minimum requirements (2GB RAM) for local AI.");
                 return Err(anyhow::anyhow!("System incompatible"));
             }
+
+            // Sync latest model registry
+            let _ = self.registry.sync_models().await;
 
             // Check if there are any models already downloaded that we could use
             let models_dir = self.registry.base_path.join("models");
@@ -127,12 +130,13 @@ impl Aide {
             // List compatible models
             let models = self.registry.get_compatible_models(&specs, ModelType::General);
             if models.is_empty() {
-                return Err(anyhow::anyhow!("No compatible models found in registry."));
+                return Err(anyhow::anyhow!("No compatible models found for your system."));
             }
 
-            println!("\nAvailable models for your system:");
+            println!("\nRecommended models for your system (based on RAM and CPU):");
             for (i, model) in models.iter().enumerate() {
-                println!("{}. {} ({})", i + 1, model.name, model.description);
+                let rec = if i == 0 { " (Recommended)" } else { "" };
+                println!("{}. {} ({}){}", i + 1, model.name, model.description, rec);
                 println!("   Size: {} GB, Quality: {}/10", model.size_gb, model.quality_score);
             }
 
@@ -169,5 +173,36 @@ impl Aide {
             .unwrap_or_else(|| "llama3".to_string());
             
         InferenceEngine::new(path, template)
+    }
+
+    pub async fn generate_welcome_message(&self, engine: &InferenceEngine) -> anyhow::Result<String> {
+        let profile = self.memory.get_profile_summary()?;
+        let (turns, _) = self.memory.conversation_stats()?;
+        
+        // Use current time as a 'seed' to break greedy sampling determinism
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_secs();
+        
+        let prompt = if turns == 0 {
+            format!(
+                "Timestamp: {}. Generate a very brief, friendly, and professional welcome message for a first-time user of Aide. Keep it under 2 sentences.",
+                now
+            )
+        } else {
+            format!(
+                "Timestamp: {}. You are Aide. Based on this user profile: \"{}\". \
+                 Generate a very brief (1-2 sentences) welcome back message. \
+                 Vary your style (warm, professional, witty, or observant) so it's different every time. \
+                 Do not use placeholders like [Name].",
+                now,
+                profile
+            )
+        };
+
+        let stop = std::sync::atomic::AtomicBool::new(false);
+        // Use a small token limit for the welcome message to keep it snappy
+        engine.ask_stream(&prompt, &[], 64, "You are a friendly AI assistant named Aide. Be concise and varied.", &stop, |_| {})
     }
 }

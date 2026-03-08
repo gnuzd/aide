@@ -13,7 +13,7 @@ use std::time::Duration;
 use crossterm::event::{self, Event, KeyCode, KeyEventKind, KeyModifiers};
 use crossterm::terminal::{enable_raw_mode, disable_raw_mode};
 
-pub fn run_chat_loop(
+pub async fn run_chat_loop(
     aide: &mut Aide,
     engine: InferenceEngine,
     session_id: &str,
@@ -33,6 +33,22 @@ pub fn run_chat_loop(
     let stop = AtomicBool::new(false);
     let (stats_turns, _) = aide.memory.conversation_stats().unwrap_or((0, 0));
     let mut turn_number = stats_turns as u32;
+
+    // Show personalized welcome message
+    if let Ok(welcome) = aide.generate_welcome_message(&engine).await {
+        println!();
+        crossterm::execute!(
+            stdout(),
+            SetForegroundColor(get_theme(aide.config.active_theme.as_deref().unwrap_or("gruvbox"), &[]).h1_color()),
+            SetAttribute(Attribute::Bold),
+        )?;
+        print!("Aide: ");
+        crossterm::execute!(
+            stdout(),
+            SetAttribute(Attribute::Reset),
+        )?;
+        println!("{}\n", welcome);
+    }
 
     loop {
         let input = match read_chat_line(aide, &chat_history)? {
@@ -83,11 +99,15 @@ pub fn run_chat_loop(
                 "/help" => {
                     println!("\n{}", "Available Commands:".bold().yellow());
                     println!("  /clear [arg]    - Clear data (all, chat, profile, models, config)");
+                    println!("  /exit, /quit    - Exit the application");
                     println!("  /help           - Show this help message");
                     println!("  /memory         - Show what Aide knows about you");
                     println!("  /models         - List available and downloaded models");
                     println!("  /system         - Show system information");
                     println!("  /theme [name]   - List or switch color themes");
+                }
+                "/exit" | "/quit" => {
+                    break;
                 }
                 "/theme" => {
                     let themes = all_themes(&custom_themes);
@@ -125,36 +145,43 @@ pub fn run_chat_loop(
                     );
                 }
                 "/models" => {
-                    println!("\n{}", "Model Registry:".bold().yellow());
-                    for model in &aide.registry.models {
-                        let status = if aide
-                            .registry
-                            .base_path
-                            .join("models")
-                            .join(&model.filename)
-                            .exists()
-                        {
-                            "[Downloaded]".green()
-                        } else {
-                            "[Available]".dimmed()
-                        };
-                        let active = if aide
-                            .config
-                            .active_model_path
-                            .as_ref()
-                            .map_or(false, |p| p.ends_with(&model.filename))
-                        {
-                            " (Active)".bold().cyan()
-                        } else {
-                            "".normal()
-                        };
-                        println!(
-                            "  {} {} - {}{}",
-                            status,
-                            model.name.bold(),
-                            model.description,
-                            active
-                        );
+                    if parts.len() > 1 && parts[1] == "sync" {
+                        println!("Updating model registry...");
+                        let _ = aide.registry.sync_models().await;
+                        println!("Registry update complete.");
+                    } else {
+                        println!("\n{}", "Model Registry:".bold().yellow());
+                        for model in &aide.registry.models {
+                            let status = if aide
+                                .registry
+                                .base_path
+                                .join("models")
+                                .join(&model.filename)
+                                .exists()
+                            {
+                                "[Downloaded]".green()
+                            } else {
+                                "[Available]".dimmed()
+                            };
+                            let active = if aide
+                                .config
+                                .active_model_path
+                                .as_ref()
+                                .map_or(false, |p| p.ends_with(&model.filename))
+                            {
+                                " (Active)".bold().cyan()
+                            } else {
+                                "".normal()
+                            };
+                            println!(
+                                "  {} {} - {}{}",
+                                status,
+                                model.name.bold(),
+                                model.description,
+                                active
+                            );
+                        }
+                        println!("\nUse '/models sync' to update the registry from remote.");
                     }
                 }
                 "/memory" => {
