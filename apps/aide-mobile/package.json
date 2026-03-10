@@ -14,7 +14,10 @@
   "license": "MIT",
   "dependencies": {
     "@tauri-apps/api": "^2",
-    "@tauri-apps/plugin-opener": "^2"
+    "@tauri-apps/plugin-opener": "^2",
+    "framework7": "^9.0.3",
+    "framework7-icons": "^5.0.5",
+    "framework7-svelte": "^9.0.3"
   },
   "devDependencies": {
     "@sveltejs/adapter-static": "^3.0.6",

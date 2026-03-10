@@ -175,7 +175,7 @@ impl Aide {
         InferenceEngine::new(path, template)
     }
 
-    pub async fn generate_welcome_message(&self, engine: &InferenceEngine) -> anyhow::Result<String> {
+    pub fn generate_welcome_message(&self, engine: &InferenceEngine) -> anyhow::Result<String> {
         let profile = self.memory.get_profile_summary()?;
         let (turns, _) = self.memory.conversation_stats()?;
         

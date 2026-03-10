@@ -1,0 +1,7 @@
+.toolbar.messagebar {
+  padding-inline: 1rem;
+
+  .toolbar-inner {
+    padding-top: 12px;
+  }
+}

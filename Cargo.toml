@@ -1,6 +1,6 @@
 [workspace]
 members = [
-    "apps/aide-cli", "apps/aide-core" 
+    "apps/aide-cli", "apps/aide-core", "apps/aide-mobile/src-tauri"
 ]
 
 resolver = "2"
